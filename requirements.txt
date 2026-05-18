@@ -1,0 +1,12 @@
+jax>=0.8.1
+flax>=0.12.0
+optax
+orbax-checkpoint
+tensorflow-datasets
+grain
+humanize
+pandas
+kagglehub
+tqdm
+pytest>=6.0
+ruff>=0.1.0

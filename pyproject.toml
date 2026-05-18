@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nli-reasoning"
+version = "0.1.0"
+description = "An investigation into using NLI with LLMs"
+authors = [
+    {name = "Author Name", email = "author@example.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jax>=0.8.1",
+    "flax>=0.12.0",
+    "optax",
+    "orbax-checkpoint",
+    "tensorflow-datasets",
+    "grain",
+    "humanize",
+    "pandas",
+    "kagglehub",
+    "tqdm"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "ruff>=0.1.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+]
