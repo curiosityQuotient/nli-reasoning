@@ -2,18 +2,23 @@
 
 import gc
 import os
+import sys
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import optax
 import pandas as pd
 
-from .data.dataset import get_dataset, get_nli_dataset
-from .models.config import (
+# Add the src directory to the path to enable imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from data.dataset import get_dataset, get_nli_dataset
+from models.config import (
     TEST_DATA_DIR,
     TRAIN_DATA_DIR,
     TRAIN_FRACTION,
 )
-from .utils.memory import show_hbm_usage
+from utils.memory import show_hbm_usage
 
 # Training configuration
 TRAIN_MICRO_BATCH_SIZE = 4
