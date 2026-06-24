@@ -28,7 +28,7 @@ def extract_hash_answer(text: str) -> Optional[str]:
     return text.split("####")[1].strip()
 
 
-def _load_from_tfds(data_dir: str, split: str) -> tfds.DatasetBuilder:
+def _load_from_tfds(data_dir: str, split: str):
     """Load GSM8K dataset from TensorFlow Datasets.
 
     Args:
