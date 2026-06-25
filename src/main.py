@@ -28,7 +28,7 @@ NUM_EPOCHS = 3
 
 
 def load_nli_data(
-    train_path: str,
+    train_path: Path,
     train_fraction: float = 0.5
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Load NLI datasets for training and testing.
@@ -42,14 +42,13 @@ def load_nli_data(
         Tuple of (train_dataframe, test_dataframe)
     """
     # Validate and convert to Path object
-    train_path_obj = Path(train_path)
-    if not train_path_obj.exists():
+    if not train_path.exists():
         raise FileNotFoundError(f"Training data file not found: {train_path}")
-    if not train_path_obj.is_file():
+    if not train_path.is_file():
         raise ValueError(f"Training data path is not a file: {train_path}")
     
     # Load training data
-    df_nli = pd.read_json(train_path_obj, lines=True)
+    df_nli = pd.read_json(train_path, lines=True)
     # Unpack premise and hypothesis
     df_nli["premise"] = [xx["premise"] for xx in df_nli.iloc[:, 6]]
     df_nli["hypothesis"] = [xx["hypothesis"] for xx in df_nli.iloc[:, 6]]
@@ -182,9 +181,9 @@ def main(training_config: Optional[Dict[str, Any]] = None) -> None:
 
     # Load data
     print("Loading NLI data...")
-    df_train, df_test = load_nli_data(
-        "/kaggle/input/datasets/curiosityquotient/chaos-nli/chaosNLI_v1.0/chaosNLI_snli.jsonl"
-    )
+
+    nli_data_path = Path("/kaggle/input/datasets/curiosityquotient/chaos-nli/chaosNLI_v1.0/chaosNLI_snli.jsonl")
+    df_train, df_test = load_nli_data(nli_data_path)
 
     print(f"Training samples: {len(df_train)}")
     print(f"Test samples: {len(df_test)}")
