@@ -10,7 +10,7 @@ import optax
 import pandas as pd
 
 # Add the src directory to the path to enable imports
-sys.path.append("/kaggle/working/nli-reasoning")
+sys.path.append("/kaggle/working/nli-reasoning/src")
 
 from data.dataset import get_dataset, get_nli_dataset
 from models.config import (
