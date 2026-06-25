@@ -46,6 +46,8 @@ def load_nli_data(
         raise FileNotFoundError(f"Training data file not found: {train_path}")
     if not train_path.is_file():
         raise ValueError(f"Training data path is not a file: {train_path}")
+    else:
+        print("Training data path exists as a file.")
     
     # Load training data
     df_nli = pd.read_json(train_path, lines=True)
