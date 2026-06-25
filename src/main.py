@@ -9,11 +9,11 @@ from typing import Any, Dict, Optional, Tuple
 import optax
 import pandas as pd
 
-# Add the src directory to the path to enable imports
-sys.path.append("/kaggle/working/nli-reasoning/src")
+# Add the project directory to the path to enable imports
+sys.path.append("/kaggle/working/nli-reasoning")
 
-from data.dataset import get_dataset, get_nli_dataset
-from models.config import (
+from src.data.dataset import get_dataset, get_nli_dataset
+from src.models.config import (
     TEST_DATA_DIR,
     TRAIN_DATA_DIR,
     TRAIN_FRACTION,

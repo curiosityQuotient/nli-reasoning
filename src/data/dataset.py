@@ -3,8 +3,12 @@
 import csv
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Dict, Optional, Union
+
+# Add the project directory to the path to enable imports
+sys.path.append("/kaggle/working/nli-reasoning")
 
 import grain
 import kagglehub
