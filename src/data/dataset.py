@@ -56,14 +56,16 @@ def download_kaggle_dataset(target_dir: str = "./data/gsm8k") -> str:
     Returns:
         Path to downloaded dataset
     """
-    os.makedirs(target_dir, exist_ok=True)
+    target_path = Path(target_dir)
+    target_path.mkdir(parents=True, exist_ok=True)
+    
     src = kagglehub.dataset_download("thedevastator/grade-school-math-8k-q-a")
     src = Path(src)
-    dst = Path(target_dir)
+    dst = target_path
 
     for csv_file in src.glob("*.csv"):
         shutil.copy2(csv_file, dst / csv_file.name)
-    return target_dir
+    return str(target_dir)
 
 
 def get_dataset(
@@ -84,16 +86,25 @@ def get_dataset(
     Raises:
         ValueError: If unknown source is provided
     """
-    # Download data
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
+    # Convert to Path and validate
+    data_dir_path = Path(data_dir)
+    if not data_dir_path.exists():
+        data_dir_path.mkdir(parents=True, exist_ok=True)
+    elif not data_dir_path.is_dir():
+        raise ValueError(f"data_dir is not a directory: {data_dir}")
 
     if source == "tfds":
-        data = _load_from_tfds(data_dir, split)
+        data = _load_from_tfds(str(data_dir_path), split)
     elif source == "kaggle":
-        kaggle_dir = download_kaggle_dataset(data_dir)
+        kaggle_dir = download_kaggle_dataset(str(data_dir_path))
         file_name = "main_" + split + ".csv"
-        csv_path = os.path.join(kaggle_dir, file_name)
+        csv_path = Path(kaggle_dir) / file_name
+        
+        # Validate CSV file exists
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV file not found: {csv_path}")
+        if not csv_path.is_file():
+            raise ValueError(f"CSV path is not a file: {csv_path}")
 
         data = []
         with open(csv_path, newline="", encoding="utf-8") as csvfile:
@@ -110,7 +121,7 @@ def get_dataset(
         return v if isinstance(v, str) else v.decode("utf-8")
 
     # Assuming SYSTEM_PROMPT is defined elsewhere
-    from ..models.config import SYSTEM_PROMPT
+    from src.models.config import SYSTEM_PROMPT
 
     dataset = (
         grain.MapDataset.source(data)
@@ -167,7 +178,7 @@ def get_nli_dataset(data_df: pd.DataFrame) -> grain.MapDataset:
         return v if isinstance(v, str) else v.decode("utf-8")
 
     # Assuming SYSTEM_PROMPT and TEMPLATE are defined elsewhere
-    from ..models.config import SYSTEM_PROMPT, TEMPLATE
+    from src.models.config import SYSTEM_PROMPT, TEMPLATE
 
     dataset = (
         grain.MapDataset.source(data)

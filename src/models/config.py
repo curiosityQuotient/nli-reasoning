@@ -1,5 +1,7 @@
 """Model configuration constants."""
 
+from pathlib import Path
+
 # System prompt for reasoning tasks
 SYSTEM_PROMPT = "You are a helpful AI assistant."
 
@@ -7,8 +9,8 @@ SYSTEM_PROMPT = "You are a helpful AI assistant."
 TEMPLATE = "{system_prompt}\n\n{question}"
 
 # Data configuration
-TRAIN_DATA_DIR = "./data/train"
-TEST_DATA_DIR = "./data/test"
+TRAIN_DATA_DIR = Path("./data/train")
+TEST_DATA_DIR = Path("./data/test")
 TRAIN_FRACTION = 1.0
 
 # LoRA configuration

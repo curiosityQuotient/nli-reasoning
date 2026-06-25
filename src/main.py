@@ -41,8 +41,15 @@ def load_nli_data(
     Returns:
         Tuple of (train_dataframe, test_dataframe)
     """
+    # Validate and convert to Path object
+    train_path_obj = Path(train_path)
+    if not train_path_obj.exists():
+        raise FileNotFoundError(f"Training data file not found: {train_path}")
+    if not train_path_obj.is_file():
+        raise ValueError(f"Training data path is not a file: {train_path}")
+    
     # Load training data
-    df_nli = pd.read_json(train_path, lines=True)
+    df_nli = pd.read_json(train_path_obj, lines=True)
     # Unpack premise and hypothesis
     df_nli["premise"] = [xx["premise"] for xx in df_nli.iloc[:, 6]]
     df_nli["hypothesis"] = [xx["hypothesis"] for xx in df_nli.iloc[:, 6]]
