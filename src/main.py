@@ -29,7 +29,6 @@ NUM_EPOCHS = 3
 
 def load_nli_data(
     train_path: str,
-    test_path: str,
     train_fraction: float = 0.5
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Load NLI datasets for training and testing.
@@ -43,21 +42,22 @@ def load_nli_data(
         Tuple of (train_dataframe, test_dataframe)
     """
     # Load training data
-    df_train = pd.read_json(train_path, lines=True)
+    df_nli = pd.read_json(train_path, lines=True)
     # Unpack premise and hypothesis
-    df_train["premise"] = [xx["premise"] for xx in df_train.iloc[:, 6]]
-    df_train["hypothesis"] = [xx["hypothesis"] for xx in df_train.iloc[:, 6]]
+    df_nli["premise"] = [xx["premise"] for xx in df_nli.iloc[:, 6]]
+    df_nli["hypothesis"] = [xx["hypothesis"] for xx in df_nli.iloc[:, 6]]
     # Convert Shannon Entropy to uncertainty
     def uncert_convert(x):
         return 1 + round(10*(1 - x/1.58496))
-    df_train["uncertainty"] = [uncert_convert(xx) for xx in df_train.iloc[:, 5]]
+    df_nli["uncertainty"] = [uncert_convert(xx) for xx in df_nli.iloc[:, 5]]
 
     # Split into train/test
     N_all = df_train.shape[0]
     N_train = N_all - 200
+    req_cols = [2, 5, 9, 10, 11]
 
-    df_test = df_train[N_train:].copy()
-    df_train = df_train[:N_train].copy()
+    df_test = df_nli.iloc[0:N_train, req_cols]
+    df_train = df_nli.iloc[N_train:-1, req_cols]
 
     return df_train, df_test
 
