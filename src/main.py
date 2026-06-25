@@ -176,8 +176,7 @@ def main(training_config: Optional[Dict[str, Any]] = None) -> None:
     # Load data
     print("Loading NLI data...")
     df_train, df_test = load_nli_data(
-        "../input/chaos-nli/chaosNLI_v1.0/chaosNLI_snli.jsonl",
-        "../input/chaos-nli/chaosNLI_v1.0/chaosNLI_snli.jsonl"
+        "/kaggle/input/datasets/curiosityquotient/chaos-nli/chaosNLI_v1.0/chaosNLI_snli.jsonl"
     )
 
     print(f"Training samples: {len(df_train)}")
