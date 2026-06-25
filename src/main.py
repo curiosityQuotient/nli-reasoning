@@ -52,7 +52,7 @@ def load_nli_data(
     df_nli["uncertainty"] = [uncert_convert(xx) for xx in df_nli.iloc[:, 5]]
 
     # Split into train/test
-    N_all = df_train.shape[0]
+    N_all = df_nli.shape[0]
     N_train = N_all - 200
     req_cols = [2, 5, 9, 10, 11]
 
