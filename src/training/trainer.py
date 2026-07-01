@@ -2,7 +2,7 @@
 
 import gc
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import jax
 import optax
