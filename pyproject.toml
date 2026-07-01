@@ -22,7 +22,10 @@ dependencies = [
     "humanize",
     "pandas",
     "kagglehub",
-    "tqdm"
+    "tqdm",
+    "wandb>=0.22.0",
+    "google-tunix[prod]>=0.1.3",
+    "qwix"
 ]
 
 [project.optional-dependencies]

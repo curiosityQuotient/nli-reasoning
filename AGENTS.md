@@ -5,8 +5,8 @@
 ---
 
 ## 1. Project Overview & Architecture
-* **Project Name:** [Your Project Name]
-* **Description:** [One or two sentences explaining what this application actually does.]
+* **Project Name:** Two stage NLI learning
+* **Description:** This is some code that takes two-stage-learning.ipynb and implements it in a more maintainable way in a git repo. It should replicate the functionality of the notebook, due to this it had to be run on kaggle. 
 * **Architecture Style:** Modular, decoupled, and highly typed. Avoid massive monolithic files. Prefer single-responsibility modules under a clear domain layout.
 
 ### Directory Structure Blueprint

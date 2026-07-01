@@ -6,25 +6,31 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-import optax
 import pandas as pd
 
-# Add the project directory to the path to enable imports
 sys.path.append("/kaggle/working/nli-reasoning")
 
 from src.data.dataset import get_dataset, get_nli_dataset
 from src.models.config import (
+    NUM_BATCHES,
+    NUM_EPOCHS,
+    NUM_TEST_BATCHES,
     TEST_DATA_DIR,
     TRAIN_DATA_DIR,
     TRAIN_FRACTION,
+    TRAIN_MICRO_BATCH_SIZE,
 )
-from utils.memory import show_hbm_usage
-
-# Training configuration
-TRAIN_MICRO_BATCH_SIZE = 4
-NUM_BATCHES = 1000
-NUM_TEST_BATCHES = 100
-NUM_EPOCHS = 3
+from src.models.loader import (
+    download_gemma_model,
+    get_gemma_ref_model,
+    get_lora_model,
+    get_tokenizer,
+    resave_checkpoint,
+)
+from src.training.grpo_config import create_grpo_config_stage1, create_grpo_config_stage2
+from src.training.trainer import train_two_stage
+from src.utils.evaluations import evaluate, evaluate_nli
+from src.utils.memory import show_hbm_usage
 
 
 def load_nli_data(
@@ -35,31 +41,28 @@ def load_nli_data(
 
     Args:
         train_path: Path to training data JSONL file
-        test_path: Path to test data JSONL file
         train_fraction: Fraction of data to use for training
 
     Returns:
         Tuple of (train_dataframe, test_dataframe)
     """
-    # Validate and convert to Path object
     if not train_path.exists():
         raise FileNotFoundError(f"Training data file not found: {train_path}")
     if not train_path.is_file():
         raise ValueError(f"Training data path is not a file: {train_path}")
-    else:
-        print("Training data path exists as a file.")
     
-    # Load training data
+    print("Training data path exists as a file.")
+    
     df_nli = pd.read_json(train_path, lines=True)
-    # Unpack premise and hypothesis
+    
     df_nli["premise"] = [xx["premise"] for xx in df_nli.iloc[:, 6]]
     df_nli["hypothesis"] = [xx["hypothesis"] for xx in df_nli.iloc[:, 6]]
-    # Convert Shannon Entropy to uncertainty
+    
     def uncert_convert(x):
-        return 1 + round(10*(1 - x/1.58496))
+        return 1 + round(10 * (1 - x / 1.58496))
+    
     df_nli["uncertainty"] = [uncert_convert(xx) for xx in df_nli.iloc[:, 5]]
 
-    # Split into train/test
     N_all = df_nli.shape[0]
     N_train = N_all - 200
     req_cols = [2, 5, 9, 10, 11]
@@ -85,9 +88,8 @@ def prepare_datasets(
     Returns:
         Tuple of (train_nli, val_nli, test_nli, train_gsm8k, val_gsm8k, test_gsm8k)
     """
-    # NLI dataset preparation
     nli_dataset = get_nli_dataset(df_train).batch(TRAIN_MICRO_BATCH_SIZE)[
-        :2*NUM_BATCHES
+        :2 * NUM_BATCHES
     ]
 
     if TRAIN_FRACTION == 1.0:
@@ -104,7 +106,6 @@ def prepare_datasets(
         :NUM_TEST_BATCHES
     ]
 
-    # GSM8K dataset preparation
     gsm8k_dataset = get_dataset(
         TRAIN_DATA_DIR, "train", source
     ).batch(TRAIN_MICRO_BATCH_SIZE)[:NUM_BATCHES]
@@ -133,36 +134,100 @@ def prepare_datasets(
     )
 
 
-def initialize_model_and_optimizer():
-    """Initialize model and optimizer for training.
-
-    Returns:
-        Tuple of (model, optimizer, state)
-    """
-    # Model initialization would go here
-    # This is a placeholder implementation
-    model = None
-    optimizer = optax.adam(learning_rate=1e-4)
-    state = None
-
-    return model, optimizer, state
-
-
-def train_step(model, optimizer, state, batch):
-    """Perform a single training step.
-
+def setup_model(
+    checkpoint_dir: Path,
+    model_family: str = "gemma2",
+    model_version: str = "gemma2-2b-it"
+) -> Tuple[Any, Any, Any]:
+    """Download, setup, and load the model.
+    
     Args:
-        model: Model to train
-        optimizer: Optimizer to use
-        state: Training state
-        batch: Batch of training data
-
+        checkpoint_dir: Directory for model checkpoints
+        model_family: Model family name
+        model_version: Model version string
+        
     Returns:
-        Updated model, optimizer, and state
+        Tuple of (reference_model, lora_model, tokenizer)
     """
-    # Training step implementation would go here
-    # This is a placeholder implementation
-    return model, optimizer, state
+    print("Downloading model from Kaggle...")
+    kaggle_ckpt_path = download_gemma_model(model_family, model_version)
+    
+    resaved_ckpt_path = checkpoint_dir / "resaved_checkpoint"
+    if not resaved_ckpt_path.exists():
+        print("Resaving checkpoint in Flax NNX format...")
+        resave_checkpoint(kaggle_ckpt_path, str(resaved_ckpt_path), model_family)
+        gc.collect()
+    
+    print("Loading reference model...")
+    ref_model = get_gemma_ref_model(str(resaved_ckpt_path / "model_params"))
+    
+    print("Applying LoRA to create policy model...")
+    lora_model = get_lora_model(ref_model)
+    
+    print("Getting tokenizer...")
+    tokenizer = get_tokenizer(model_version)
+    
+    return ref_model, lora_model, tokenizer
+
+
+def run_pre_training_evaluation(
+    test_nli_dataset: Any,
+    test_gsm8k_dataset: Any,
+    sampler: Any
+) -> Tuple[Tuple, Tuple]:
+    """Run evaluation before training to establish baseline.
+    
+    Args:
+        test_nli_dataset: NLI test dataset
+        test_gsm8k_dataset: GSM8K test dataset
+        sampler: Text sampler
+        
+    Returns:
+        Tuple of (nli_baseline_metrics, gsm8k_baseline_metrics)
+    """
+    print("=" * 60)
+    print("Pre-training Evaluation (Baseline)")
+    print("=" * 60)
+    
+    print("\nEvaluating on NLI test set...")
+    nli_baseline = evaluate_nli(test_nli_dataset, sampler, make_lst=False)
+    print(f"NLI Baseline: {nli_baseline}")
+    
+    print("\nEvaluating on GSM8K test set...")
+    gsm8k_baseline = evaluate(test_gsm8k_dataset, sampler, make_lst=False)
+    print(f"GSM8K Baseline: {gsm8k_baseline}")
+    
+    return nli_baseline, gsm8k_baseline
+
+
+def run_post_training_evaluation(
+    test_nli_dataset: Any,
+    test_gsm8k_dataset: Any,
+    sampler: Any
+) -> Tuple[Tuple, Tuple]:
+    """Run evaluation after training.
+    
+    Args:
+        test_nli_dataset: NLI test dataset
+        test_gsm8k_dataset: GSM8K test dataset
+        sampler: Text sampler
+        
+    Returns:
+        Tuple of (nli_metrics, gsm8k_metrics)
+    """
+    print("=" * 60)
+    print("Post-training Evaluation")
+    print("=" * 60)
+    
+    print("\nEvaluating on NLI test set...")
+    nli_metrics = evaluate_nli(test_nli_dataset, sampler, make_lst=False)
+    print(f"NLI Results: {nli_metrics}")
+    
+    print("\nEvaluating on GSM8K test set...")
+    gsm8k_metrics = evaluate(test_gsm8k_dataset, sampler, make_lst=False)
+    print(f"GSM8K Results: {gsm8k_metrics}")
+    
+    return nli_metrics, gsm8k_metrics
 
 
 def main(training_config: Optional[Dict[str, Any]] = None) -> None:
@@ -174,57 +239,119 @@ def main(training_config: Optional[Dict[str, Any]] = None) -> None:
     if training_config is None:
         training_config = {}
 
-    # Set up WandB logging if configured
     if "wandb_api_key" in training_config:
         os.environ['WANDB_API_KEY'] = training_config["wandb_api_key"]
+        use_wandb = True
+    else:
+        use_wandb = False
 
-    # Display memory usage
     show_hbm_usage()
 
-    # Load data
+    print("\n" + "=" * 60)
     print("Loading NLI data...")
-
-    nli_data_path = Path("/kaggle/input/datasets/curiosityquotient/chaos-nli/chaosNLI_v1.0/chaosNLI_snli.jsonl")
+    print("=" * 60)
+    
+    nli_data_path = Path(
+        "/kaggle/input/datasets/curiosityquotient/chaos-nli/chaosNLI_v1.0/chaosNLI_snli.jsonl"
+    )
     df_train, df_test = load_nli_data(nli_data_path)
 
     print(f"Training samples: {len(df_train)}")
     print(f"Test samples: {len(df_test)}")
 
-    # Prepare datasets
+    print("\n" + "=" * 60)
     print("Preparing datasets...")
+    print("=" * 60)
+    
     datasets = prepare_datasets(df_train, df_test, source='kaggle')
     train_nli_dataset, val_nli_dataset, test_nli_dataset, \
         train_gsm8k_dataset, val_gsm8k_dataset, test_gsm8k_dataset = datasets
 
-    dataset_lengths = (
-        len(train_nli_dataset),
-        len(val_nli_dataset) if val_nli_dataset is not None else 0,
-        len(test_nli_dataset),
+    print(f"NLI dataset: {len(train_nli_dataset)} train batches")
+    print(f"GSM8K dataset: {len(train_gsm8k_dataset)} train batches")
+
+    print("\n" + "=" * 60)
+    print("Setting up model...")
+    print("=" * 60)
+    
+    checkpoint_dir = Path("/kaggle/working/checkpoints")
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    ref_model, lora_model, tokenizer = setup_model(checkpoint_dir)
+
+    print("\n" + "=" * 60)
+    print("Running pre-training evaluation...")
+    print("=" * 60)
+    
+    try:
+        from tunix.generate import sampler as sampler_lib
+        
+        sampler = sampler_lib.Sampler(
+            model=ref_model,
+            tokenizer=tokenizer,
+        )
+        
+        nli_baseline, gsm8k_baseline = run_pre_training_evaluation(
+            test_nli_dataset, test_gsm8k_dataset, sampler
+        )
+    except Exception as e:
+        print(f"Warning: Pre-training evaluation failed: {e}")
+        nli_baseline = None
+        gsm8k_baseline = None
+
+    print("\n" + "=" * 60)
+    print("Starting Two-Stage Training")
+    print("=" * 60)
+    
+    grpo_config_stage1 = create_grpo_config_stage1()
+    grpo_config_stage2 = create_grpo_config_stage2()
+    
+    trained_model, training_metrics = train_two_stage(
+        model=lora_model,
+        ref_model=ref_model,
+        train_gsm8k_dataset=train_gsm8k_dataset,
+        train_nli_dataset=train_nli_dataset,
+        grpo_config_stage1=grpo_config_stage1,
+        grpo_config_stage2=grpo_config_stage2,
+        checkpoint_dir=checkpoint_dir,
+        use_wandb=use_wandb,
     )
-    print(f"Dataset contains {dataset_lengths} batches")
+    
+    print("\nTraining completed!")
+    print(f"Training metrics: {training_metrics}")
 
-    # Initialize model and optimizer
-    print("Initializing model...")
-    model, optimizer, state = initialize_model_and_optimizer()
+    print("\n" + "=" * 60)
+    print("Running post-training evaluation...")
+    print("=" * 60)
+    
+    gc.collect()
+    
+    try:
+        from tunix.generate import sampler as sampler_lib
+        
+        trained_sampler = sampler_lib.Sampler(
+            model=trained_model,
+            tokenizer=tokenizer,
+        )
+        
+        nli_final, gsm8k_final = run_post_training_evaluation(
+            test_nli_dataset, test_gsm8k_dataset, trained_sampler
+        )
+        
+        print("\n" + "=" * 60)
+        print("Final Results Comparison")
+        print("=" * 60)
+        
+        if nli_baseline and gsm8k_baseline:
+            print(f"\nNLI Accuracy: {nli_baseline[2]:.2f}% -> {nli_final[2]:.2f}%")
+            print(f"GSM8K Accuracy: {gsm8k_baseline[2]:.2f}% -> {gsm8k_final[2]:.2f}%")
+        
+    except Exception as e:
+        print(f"Warning: Post-training evaluation failed: {e}")
 
-    # Training loop
-    print("Starting training...")
-    for epoch in range(NUM_EPOCHS):
-        print(f"Epoch {epoch + 1}/{NUM_EPOCHS}")
-
-        # Iterate through batches
-        for batch_idx, batch in enumerate(train_nli_dataset):
-            model, optimizer, state = train_step(model, optimizer, state, batch)
-
-            if batch_idx % 100 == 0:
-                print(f"  Batch {batch_idx}")
-                show_hbm_usage()
-
-            # Periodic garbage collection
-            if batch_idx % 500 == 0:
-                gc.collect()
-
-    print("Training completed!")
+    print("\n" + "=" * 60)
+    print("All done!")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
