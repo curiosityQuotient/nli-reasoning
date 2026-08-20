@@ -50,8 +50,8 @@ def resave_checkpoint(
         model_family: Model family name
     """
     try:
-        from tunix.models import gemma as gemma_lib
-        from tunix.models import params as params_lib
+        import tunix
+        from tunix import gemma
     except ImportError:
         raise ImportError(
             "tunix package not installed. "
@@ -96,8 +96,7 @@ def get_gemma_ref_model(
         from tunix.models import gemma as gemma_lib
     except ImportError:
         raise ImportError(
-            "tunix package not installed. "
-            "Install with: pip install google-tunix[prod]"
+            "tunix package not installed. Install with: pip install google-tunix[prod]"
         )
     
     if mesh is None:
@@ -185,7 +184,8 @@ def get_tokenizer(
         Tokenizer instance
     """
     try:
-        from tunix.models import gemma as gemma_lib
+        import tunix
+        from tunix import gemma
     except ImportError:
         raise ImportError(
             "tunix package not installed. "
