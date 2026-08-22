@@ -50,13 +50,13 @@ def resave_checkpoint(
         model_family: Model family name
     """
     try:
-        import tunix
-        from tunix import gemma
-    except ImportError:
+        from tunix.models import gemma as gemma_lib
+        from tunix.models.gemma import params as params_lib
+    except ImportError as e:
         raise ImportError(
-            "tunix package not installed. "
-            "Install with: pip install google-tunix[prod]"
-        )
+            f"Failed to import tunix modules ({e}). "
+            "Ensure google-tunix is installed with: pip install google-tunix[prod]"
+        ) from e
     
     params = params_lib.load_and_format_params(kaggle_ckpt_path)
     
@@ -184,13 +184,13 @@ def get_tokenizer(
         Tokenizer instance
     """
     try:
-        import tunix
-        from tunix import gemma
-    except ImportError:
+        from tunix.models import gemma as gemma_lib
+        from tunix.models.gemma import params as params_lib
+    except ImportError as e:
         raise ImportError(
-            "tunix package not installed. "
-            "Install with: pip install google-tunix[prod]"
-        )
+            f"Failed to import tunix modules ({e}). "
+            "Ensure google-tunix is installed with: pip install google-tunix[prod]"
+        ) from e
     
     tokenizer = gemma_lib.Tokenizer(model_version)
     return tokenizer
