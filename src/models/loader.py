@@ -36,29 +36,35 @@ def download_gemma_model(
     )
     return kaggle_ckpt_path
 
-
 def resave_checkpoint(
     kaggle_ckpt_path: str,
     output_path: str,
     model_family: str = "gemma2"
 ) -> None:
-    """Resave model checkpoint in Flax NNX compatible format.
-    
-    Args:
-        kaggle_ckpt_path: Path to Kaggle checkpoint
-        output_path: Output path for resaved checkpoint
-        model_family: Model family name
-    """
+    """Resave model checkpoint in Flax NNX compatible format."""
     try:
         from tunix.models import gemma as gemma_lib
         from tunix.models.gemma import params as params_lib
     except ImportError as e:
         raise ImportError(
-            f"Failed to import tunix modules ({e}). "
+            f"Failed to import tunix modules: {e}. "
             "Ensure google-tunix is installed with: pip install google-tunix[prod]"
         ) from e
-    
-    params = params_lib.load_and_format_params(kaggle_ckpt_path)
+
+    ckpt_path = Path(kaggle_ckpt_path)
+
+    # KaggleHub downloads to .../1/, but the Orbax checkpoint files are inside a subfolder (e.g. .../1/2b-it)
+    if not (ckpt_path / "_METADATA").exists():
+        subdirs = [p for p in ckpt_path.iterdir() if p.is_dir()]
+        if len(subdirs) == 1:
+            ckpt_path = subdirs[0]
+        else:
+            for d in subdirs:
+                if (d / "_METADATA").exists():
+                    ckpt_path = d
+                    break
+
+    params = params_lib.load_and_format_params(str(ckpt_path))
     
     if model_family == "gemma2":
         model = gemma_lib.Transformer.from_params(params)
