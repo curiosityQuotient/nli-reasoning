@@ -200,4 +200,3 @@ def get_tokenizer(
     
     tokenizer = gemma_lib.Tokenizer(model_version)
     return tokenizer
-
