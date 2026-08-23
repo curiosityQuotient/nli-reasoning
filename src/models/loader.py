@@ -18,15 +18,7 @@ def download_gemma_model(
     model_family: str = "gemma2",
     model_version: str = "gemma2-2b-it"
 ) -> str:
-    """Download Gemma model from Kaggle.
-    
-    Args:
-        model_family: Model family name
-        model_version: Model version string
-        
-    Returns:
-        Path to downloaded model checkpoint
-    """
+    """Download Gemma model from Kaggle."""
     model_path = {
         "gemma2": "google/gemma-2/flax/",
     }
@@ -36,6 +28,7 @@ def download_gemma_model(
     )
     return kaggle_ckpt_path
 
+
 def resave_checkpoint(
     kaggle_ckpt_path: str,
     output_path: str,
@@ -43,7 +36,7 @@ def resave_checkpoint(
 ) -> None:
     """Resave model checkpoint in Flax NNX compatible format."""
     try:
-        from tunix.models import gemma as gemma_lib
+        from tunix.models.gemma import model as gemma_model
         from tunix.models.gemma import params as params_lib
     except ImportError as e:
         raise ImportError(
@@ -53,7 +46,7 @@ def resave_checkpoint(
 
     ckpt_path = Path(kaggle_ckpt_path)
 
-    # KaggleHub downloads to .../1/, but the Orbax checkpoint files are inside a subfolder (e.g. .../1/2b-it)
+    # KaggleHub downloads to .../1/, but Orbax metadata lives inside the model subfolder
     if not (ckpt_path / "_METADATA").exists():
         subdirs = [p for p in ckpt_path.iterdir() if p.is_dir()]
         if len(subdirs) == 1:
@@ -66,8 +59,13 @@ def resave_checkpoint(
 
     params = params_lib.load_and_format_params(str(ckpt_path))
     
+    # Resolve Transformer class dynamically from tunix.models.gemma.model
+    Transformer = getattr(gemma_model, "Transformer", getattr(gemma_model, "Gemma", None))
+    if Transformer is None:
+        raise AttributeError("Could not find Transformer or Gemma class in tunix.models.gemma.model")
+
     if model_family == "gemma2":
-        model = gemma_lib.Transformer.from_params(params)
+        model = Transformer.from_params(params)
     else:
         raise ValueError(f"Unknown model family: {model_family}")
     
@@ -88,22 +86,16 @@ def get_gemma_ref_model(
     model_family: str = "gemma2",
     mesh: Optional[Mesh] = None
 ) -> nnx.Module:
-    """Load Gemma reference model with JAX sharding.
-    
-    Args:
-        ckpt_path: Path to model checkpoint
-        model_family: Model family name
-        mesh: JAX mesh for sharding
-        
-    Returns:
-        Loaded model
-    """
+    """Load Gemma reference model with JAX sharding."""
     try:
-        from tunix.models import gemma as gemma_lib
-    except ImportError:
+        from tunix.models.gemma import model as gemma_model
+    except ImportError as e:
         raise ImportError(
-            "tunix package not installed. Install with: pip install google-tunix[prod]"
-        )
+            f"Failed to import tunix modules: {e}. "
+            "Install with: pip install google-tunix[prod]"
+        ) from e
+    
+    Transformer = getattr(gemma_model, "Transformer", getattr(gemma_model, "Gemma", None))
     
     if mesh is None:
         devices = jax.local_devices()
@@ -119,7 +111,7 @@ def get_gemma_ref_model(
             restore_type=nnx.State
         )
         
-        model = gemma_lib.Transformer()
+        model = Transformer()
         graph_def, abstract_state = nnx.split(model)
         state = checkpointer.restore(ckpt_path, abs_state)
         
@@ -135,24 +127,13 @@ def get_lora_model(
     alpha: float = ALPHA,
     mesh: Optional[Mesh] = None
 ) -> nnx.Module:
-    """Apply LoRA to base model.
-    
-    Args:
-        base_model: Base model to apply LoRA to
-        rank: LoRA rank
-        alpha: LoRA alpha scaling factor
-        mesh: JAX mesh for sharding
-        
-    Returns:
-        Model with LoRA applied
-    """
+    """Apply LoRA to base model."""
     try:
         import qwix
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
-            "qwix package not installed. "
-            "Install with: pip install qwix"
-        )
+            "qwix package not installed. Install with: pip install qwix"
+        ) from e
     
     if mesh is None:
         devices = jax.local_devices()
@@ -180,23 +161,19 @@ def get_tokenizer(
     model_version: str = "gemma2-2b-it",
     tokenizer_path: Optional[str] = None
 ) -> Any:
-    """Get tokenizer for the model.
-    
-    Args:
-        model_version: Model version string
-        tokenizer_path: Optional path to tokenizer
-        
-    Returns:
-        Tokenizer instance
-    """
+    """Get tokenizer for the model."""
     try:
-        from tunix.models import gemma as gemma_lib
-        from tunix.models.gemma import params as params_lib
+        from tunix.models.gemma import tokenizer as tokenizer_lib
     except ImportError as e:
         raise ImportError(
-            f"Failed to import tunix modules ({e}). "
-            "Ensure google-tunix is installed with: pip install google-tunix[prod]"
+            f"Failed to import tunix modules: {e}. "
+            "Install with: pip install google-tunix[prod]"
         ) from e
     
-    tokenizer = gemma_lib.Tokenizer(model_version)
+    Tokenizer = getattr(tokenizer_lib, "Tokenizer", None)
+    if Tokenizer is None:
+        from tunix.models import gemma as gemma_lib
+        Tokenizer = gemma_lib.Tokenizer
+        
+    tokenizer = Tokenizer(model_version)
     return tokenizer
