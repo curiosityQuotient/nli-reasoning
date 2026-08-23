@@ -38,6 +38,7 @@ def resave_checkpoint(
     try:
         from tunix.models.gemma import model as gemma_model
         from tunix.models.gemma import params as params_lib
+        from tunix.models.gemma.model import ModelConfig
     except ImportError as e:
         raise ImportError(
             f"Failed to import tunix modules: {e}. "
@@ -59,14 +60,29 @@ def resave_checkpoint(
 
     params = params_lib.load_and_format_params(str(ckpt_path))
     
-    # Resolve Transformer/Gemma class
     Transformer = getattr(gemma_model, "Transformer", getattr(gemma_model, "Gemma", None))
     if Transformer is None:
         raise AttributeError("Could not find Transformer or Gemma class in tunix.models.gemma.model")
 
     if model_family == "gemma2":
-        # Pass model_version as the required second positional argument
-        model = Transformer.from_params(params, model_version)
+        # Sanitize model_version to match Tunix's ModelConfig naming
+        resolved_version = model_version
+        if "gemma" in resolved_version.lower():
+            # Strip 'gemma2' / 'gemma' prefix to avoid 'gemma_gemma2...' duplicate prefix
+            clean = resolved_version.lower().replace("gemma2", "").replace("gemma", "").strip("-_")
+            if not clean.endswith("v2"):
+                clean = f"{clean}-v2"
+            resolved_version = clean
+
+        # Fallback check against ModelConfig attributes
+        target_config = f"gemma_{resolved_version.replace('-', '_')}"
+        if not hasattr(ModelConfig, target_config):
+            for fallback in ["2b-it-v2", "2b-v2", "2b-it", "2b"]:
+                if hasattr(ModelConfig, f"gemma_{fallback.replace('-', '_')}"):
+                    resolved_version = fallback
+                    break
+
+        model = Transformer.from_params(params, resolved_version)
     else:
         raise ValueError(f"Unknown model family: {model_family}")
     
