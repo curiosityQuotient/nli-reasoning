@@ -28,11 +28,11 @@ def download_gemma_model(
     )
     return kaggle_ckpt_path
 
-
 def resave_checkpoint(
     kaggle_ckpt_path: str,
     output_path: str,
-    model_family: str = "gemma2"
+    model_family: str = "gemma2",
+    model_version: str = "gemma2-2b-it",
 ) -> None:
     """Resave model checkpoint in Flax NNX compatible format."""
     try:
@@ -59,13 +59,14 @@ def resave_checkpoint(
 
     params = params_lib.load_and_format_params(str(ckpt_path))
     
-    # Resolve Transformer class dynamically from tunix.models.gemma.model
+    # Resolve Transformer/Gemma class
     Transformer = getattr(gemma_model, "Transformer", getattr(gemma_model, "Gemma", None))
     if Transformer is None:
         raise AttributeError("Could not find Transformer or Gemma class in tunix.models.gemma.model")
 
     if model_family == "gemma2":
-        model = Transformer.from_params(params)
+        # Pass model_version as the required second positional argument
+        model = Transformer.from_params(params, model_version)
     else:
         raise ValueError(f"Unknown model family: {model_family}")
     
