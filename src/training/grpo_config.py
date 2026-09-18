@@ -1,27 +1,26 @@
 """GRPO training configuration."""
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 from src.models.config import (
+    B1,
+    B2,
     BETA,
     EPSILON,
     LEARNING_RATE,
+    MAX_GRAD_NORM,
     MAX_STEPS,
     NUM_GENERATIONS,
     NUM_ITERATIONS,
     WARMUP_STEPS,
     WEIGHT_DECAY,
-    MAX_GRAD_NORM,
-    B1,
-    B2,
 )
 
 
 @dataclass
 class GRPOConfig:
     """Configuration for Group Relative Policy Optimization.
-    
+
     Attributes:
         num_generations: Number of responses per prompt (G in GRPO)
         num_iterations: Iterations per batch
@@ -35,6 +34,7 @@ class GRPOConfig:
         b1: Adam beta1
         b2: Adam beta2
     """
+
     num_generations: int = NUM_GENERATIONS
     num_iterations: int = NUM_ITERATIONS
     beta: float = BETA
@@ -46,7 +46,7 @@ class GRPOConfig:
     max_steps: int = MAX_STEPS
     b1: float = B1
     b2: float = B2
-    
+
     def to_dict(self) -> dict:
         """Convert config to dictionary."""
         return {
@@ -66,7 +66,7 @@ class GRPOConfig:
 
 def create_grpo_config_stage1() -> GRPOConfig:
     """Create GRPO config for Stage 1 (GSM8K training).
-    
+
     Returns:
         GRPOConfig for stage 1
     """
@@ -80,7 +80,7 @@ def create_grpo_config_stage1() -> GRPOConfig:
 
 def create_grpo_config_stage2() -> GRPOConfig:
     """Create GRPO config for Stage 2 (NLI training with uncertainty).
-    
+
     Returns:
         GRPOConfig for stage 2
     """

@@ -20,12 +20,15 @@ This project follows the modular structure outlined in AGENTS.md:
 
 ## Installation
 
+Requires Python 3.11+ (Kaggle TPU runs use 3.11).
+
 ```bash
 # Using uv (recommended)
-uv pip install -e .
+uv venv --python 3.11
+uv pip install -e '.[dev]'
 
 # Or using pip
-pip install -e .
+pip install -e '.[dev]'
 ```
 
 ## Usage
@@ -44,6 +47,30 @@ main(config)
 ```
 
 ## Development
+
+### Running on Kaggle (TPU)
+
+Kaggle's TPU image ships an older JAX (0.7.x) that Tunix refuses, so a fresh
+install must upgrade it. Version caps in `pyproject.toml` keep that upgrade
+safe — do **not** install `google-tunix[prod]` separately, and let one pip
+invocation resolve everything:
+
+```bash
+pip install -e /kaggle/working/nli-reasoning "jax[tpu]>=0.10.2,<0.11"
+```
+
+The `jax[tpu]` constraint also pins a `libtpu` build matching jax 0.10.x.
+Known-bad combinations (as of tunix 0.1.7 / flax 0.12.9):
+
+- `jax 0.11.2` + `flax 0.12.9`: `AttributeError: module
+  'jax.experimental.hijax' has no attribute 'HiPrimitive'` at `from flax
+  import nnx`.
+
+Quick sanity check before launching a run:
+
+```bash
+python -c "import src.main; print('imports ok')"
+```
 
 ### Running Tests
 

@@ -1,12 +1,24 @@
-jax>=0.8.1
-flax>=0.12.0
+# Convenience mirror of pyproject.toml dependencies.
+# Prefer installing the package itself: uv pip install -e '.[dev]'
+#
+# Version caps matter: jax 0.11.2 removed jax.experimental.hijax.HiPrimitive,
+# which breaks flax's NNX import (and flax 0.12.9 requires jax>=0.11).
+jax>=0.8.1,<0.11
+# On TPU (Kaggle), additionally constrain with the tpu extra so libtpu
+# matches: pip install "jax[tpu]>=0.10.2,<0.11"
+flax>=0.12.0,<0.12.9
 optax
-orbax-checkpoint
+orbax-checkpoint>=0.12.0,<0.13
 tensorflow-datasets
 grain
 humanize
 pandas
 kagglehub
 tqdm
+wandb>=0.22.0
+google-tunix>=0.1.7,<0.2
+qwix>=0.1.6,<0.2
+
+# Dev dependencies
 pytest>=6.0
 ruff>=0.1.0

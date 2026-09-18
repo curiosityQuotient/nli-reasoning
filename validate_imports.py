@@ -4,7 +4,7 @@ Validation script to check that all modules can be imported correctly.
 """
 
 import sys
-import traceback
+
 
 def validate_imports():
     """Validate that all modules can be imported without errors."""
@@ -12,11 +12,11 @@ def validate_imports():
         "src.models.config",
         "src.utils.memory",
         "src.data.dataset",
-        "src.main"
+        "src.main",
     ]
-    
+
     failed_imports = []
-    
+
     for module in modules_to_test:
         try:
             __import__(module)
@@ -24,7 +24,7 @@ def validate_imports():
         except ImportError as e:
             failed_imports.append((module, str(e)))
             print(f"✗ {module} - {str(e)}")
-    
+
     if failed_imports:
         print("\nFailed imports:")
         for module, error in failed_imports:
@@ -33,6 +33,7 @@ def validate_imports():
     else:
         print("\nAll modules imported successfully!")
         return True
+
 
 if __name__ == "__main__":
     success = validate_imports()

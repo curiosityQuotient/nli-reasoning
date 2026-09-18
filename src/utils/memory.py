@@ -18,7 +18,7 @@ def show_hbm_usage() -> None:
             limit = stats["bytes_limit"]
             print(
                 f"Using {fmt_size(used)} / {fmt_size(limit)} "
-                f"({used/limit:.1%}) on {d}"
+                f"({used / limit:.1%}) on {d}"
             )
 
 
@@ -37,7 +37,4 @@ def format_memory_stats(stats: dict[str, Any]) -> str:
     fmt_size = functools.partial(humanize.naturalsize, binary=True)
     used = stats.get("bytes_in_use", 0)
     limit = stats.get("bytes_limit", 1)
-    return (
-        f"{fmt_size(used)} / {fmt_size(limit)} "
-        f"({used/limit:.1%})"
-    )
+    return f"{fmt_size(used)} / {fmt_size(limit)} ({used / limit:.1%})"

@@ -13,10 +13,13 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "jax>=0.8.1",
-    "flax>=0.12.0",
+    # jax <0.11 is required: jax 0.11.2 removed jax.experimental.hijax.HiPrimitive
+    # which flax's NNX still imports (and flax 0.12.9 requires jax>=0.11), so the
+    # 0.11.x line cannot be resolved with a working flax release.
+    "jax>=0.8.1,<0.11",
+    "flax>=0.12.0,<0.12.9",
     "optax",
-    "orbax-checkpoint",
+    "orbax-checkpoint>=0.12.0,<0.13",
     "tensorflow-datasets",
     "grain",
     "humanize",
@@ -24,8 +27,8 @@ dependencies = [
     "kagglehub",
     "tqdm",
     "wandb>=0.22.0",
-    "google-tunix>=0.1.3",
-    "qwix"
+    "google-tunix>=0.1.7,<0.2",
+    "qwix>=0.1.6,<0.2"
 ]
 
 [project.optional-dependencies]
@@ -37,9 +40,6 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
-
-[tool.setuptools.package-dir]
-"" = "src"
 
 [tool.ruff]
 line-length = 88
