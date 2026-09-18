@@ -1,1 +1,20 @@
+# Original notebook (source of truth, tracked separately)
 two-stage-learning.ipynb
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Experiment outputs
+data/
+checkpoints/
+wandb/
