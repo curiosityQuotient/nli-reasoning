@@ -51,17 +51,24 @@ main(config)
 ### Running on Kaggle (TPU)
 
 Kaggle's TPU image ships an older JAX (0.7.x) that Tunix refuses, so a fresh
-install must upgrade it. Run the one-shot bootstrap script from a notebook
-cell — and **delete any older cell that installs `google-tunix[prod]`
-directly**, since it resolves a broken jax/flax pair:
+install must upgrade it. The whole session is two notebook cells — and
+**delete any older cell that installs `google-tunix[prod]` directly**, since
+it resolves a broken jax/flax pair:
 
 ```bash
+# Cell 1: install (idempotent, safe to re-run)
+!git clone <your-repo-url> /kaggle/working/nli-reasoning
 !bash /kaggle/working/nli-reasoning/scripts/kaggle_setup.sh
 ```
 
-The script installs the repository together with the `jax[tpu]` constraint
-(also pinning a matching `libtpu`) and verifies the full training stack
-imports. Equivalent manual command:
+```bash
+# Cell 2: train (fresh subprocess, streams logs)
+!bash /kaggle/working/nli-reasoning/scripts/run_training.sh
+```
+
+The setup script installs the repository together with the `jax[tpu]`
+constraint (also pinning a matching `libtpu`) and verifies the full training
+stack imports. Equivalent manual command:
 
 ```bash
 pip install -e /kaggle/working/nli-reasoning "jax[tpu]>=0.10.2,<0.11"
@@ -69,12 +76,17 @@ pip install -e /kaggle/working/nli-reasoning "jax[tpu]>=0.10.2,<0.11"
 
 Launch the run in a **fresh process**. A notebook kernel that was already
 running before the setup script will not see the freshly installed editable
-package. Either restart the kernel and use `from src.main import main`, or
-simply run as a subprocess:
+package (PEP 660 path hooks register at interpreter startup) — a kernel
+restart is not enough unless it actually happens. The simplest reliable
+form is a second `!` cell:
 
 ```bash
-!cd /kaggle/working/nli-reasoning && python -m src.main
+!bash /kaggle/working/nli-reasoning/scripts/run_training.sh
 ```
+
+This runs `python -m src.main` from the repository root as a subprocess,
+streaming logs to the cell output. (A stale kernel can also be fixed by
+restarting it and then using `from src.main import main; main()`.)
 
 Known-bad combinations (as of tunix 0.1.7 / flax 0.12.9 / perfetto 0.58):
 
