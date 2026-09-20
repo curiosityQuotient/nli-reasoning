@@ -28,7 +28,12 @@ dependencies = [
     "tqdm",
     "wandb>=0.22.0",
     "google-tunix>=0.1.7,<0.2",
-    "qwix>=0.1.6,<0.2"
+    "qwix>=0.1.6,<0.2",
+    # perfetto 0.56+ ships protos generated with protobuf gencode 6.31.1,
+    # which hard-fails against protobuf 5.x runtimes (e.g. Kaggle's stock
+    # 5.29.5, required by its preinstalled tensorflow). 0.16.0 has no
+    # runtime-version check and imports against any protobuf.
+    "perfetto>=0.16.0,<0.56"
 ]
 
 [project.optional-dependencies]

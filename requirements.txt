@@ -18,6 +18,8 @@ tqdm
 wandb>=0.22.0
 google-tunix>=0.1.7,<0.2
 qwix>=0.1.6,<0.2
+# perfetto 0.56+ needs a protobuf 6.x runtime (breaks Kaggle's stock 5.x)
+perfetto>=0.16.0,<0.56
 
 # Dev dependencies
 pytest>=6.0
