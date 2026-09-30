@@ -192,13 +192,14 @@ class GRPOTrainer:
             total_steps: Override total training steps
             wandb_run_name: Name for wandb run
         """
+        from tunix.rl import rl_cluster as rl_cluster_lib
         from tunix.rl.grpo.grpo_learner import GRPOConfig as TunixGRPOConfig
         from tunix.rl.grpo.grpo_learner import GRPOLearner
 
         steps = total_steps or self.grpo_config.max_steps
         cluster_config = self._build_cluster_config(steps)
 
-        rl_cluster = self._rl_cluster_lib.RLCluster(
+        rl_cluster = rl_cluster_lib.RLCluster(
             actor=self.model,
             reference=self.ref_model,
             tokenizer=self.tokenizer,
