@@ -5,6 +5,7 @@ checkpoint, resave it in a Flax NNX compatible format, restore a sharded
 reference model, apply LoRA to a fresh instance, and set up the tokenizer.
 """
 
+import dataclasses
 import gc
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -19,6 +20,24 @@ from jax.sharding import Mesh
 from src.models.config import ALPHA, MESH_AXES, MESH_SHAPE, RANK
 
 GEMMA2_FROM_PARAMS_VERSION = "2-2b-it"
+
+
+def unshard_embedding_vocab(shd_config: Any) -> Any:
+    """Return a sharding config that leaves the embedding vocab axis whole.
+
+    Tunix's default is ``emb_vd=('tp', 'fsdp')``, which shards the embedding
+    table along its vocabulary dimension. Looking a token up is a gather on
+    exactly that dimension, and a gather over a sharded axis has no single
+    valid output sharding, so the first call into the model raises::
+
+        ShardingTypeError: Use `.at[...].get(out_sharding=)` to provide
+        output PartitionSpec for the gather indexing as out sharding could
+        not be resolved unambiguously
+
+    Only the leading (vocabulary) entry is replaced, so the hidden dimension
+    keeps whatever axis it was assigned.
+    """
+    return dataclasses.replace(shd_config, emb_vd=(None, *shd_config.emb_vd[1:]))
 
 
 def download_gemma_model(
@@ -133,6 +152,7 @@ def get_gemma_ref_model(
 
     mesh = create_mesh()
     model_config = gemma_model.ModelConfig.gemma2_2b()
+    model_config.shd_config = unshard_embedding_vocab(model_config.shd_config)
 
     abs_gemma: nnx.Module = nnx.eval_shape(
         lambda: gemma_model.Gemma(model_config, rngs=nnx.Rngs(params=0))
