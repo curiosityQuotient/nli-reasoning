@@ -48,15 +48,15 @@ main(config)
 
 ## Development
 
-### Running on Kaggle (TPU)
+### Running on Kaggle (TPU or GPU)
 
-Kaggle's TPU image ships an older JAX (0.7.x) that Tunix refuses, so a fresh
-install must upgrade it. The whole session is two notebook cells — and
-**delete any older cell that installs `google-tunix[prod]` directly**, since
-it resolves a broken jax/flax pair:
+The whole session is two notebook cells — and **delete any older cell that
+installs `google-tunix[prod]` directly**, since it resolves a broken jax/flax
+pair:
 
 ```bash
 # Cell 1: install (idempotent, safe to re-run)
+!rm -rf /kaggle/working/nli-reasoning
 !git clone <your-repo-url> /kaggle/working/nli-reasoning
 !bash /kaggle/working/nli-reasoning/scripts/kaggle_setup.sh
 ```
@@ -66,27 +66,50 @@ it resolves a broken jax/flax pair:
 !bash /kaggle/working/nli-reasoning/scripts/run_training.sh
 ```
 
-The setup script installs the repository together with the `jax[tpu]`
-constraint (also pinning a matching `libtpu`) and verifies the full training
-stack imports. Equivalent manual command:
+Pick the accelerator under **Options > Accelerator** before starting the
+session. The setup script detects what is actually attached and installs a
+matching stack:
+
+| Detected | Installed | Notes |
+| --- | --- | --- |
+| TPU (`/dev/accel*`) | `jax[tpu]` | pulls a matching `libtpu` |
+| GPU (`nvidia-smi`) | `jax[cuda12]` | pulls a matching `jax-cuda12-plugin` |
+| neither | `jax` (CPU) | smoke-test only; too slow to train |
+
+Override detection with `NLI_ACCELERATOR`:
 
 ```bash
-pip install -e /kaggle/working/nli-reasoning "jax[tpu]>=0.10.2,<0.11"
+!NLI_ACCELERATOR=gpu bash /kaggle/working/nli-reasoning/scripts/kaggle_setup.sh
 ```
+
+The script also **removes the base image's `jax_cuda12_plugin`**, which is
+built against Kaggle's stock jaxlib 0.7.x. Left in place next to jaxlib
+0.10.2 it still enumerates devices, so nothing looks wrong, but the first
+real computation fails with
+`Unexpected PJRT_FFI_UserData_Add_Args size: expected 48, got 40`.
+
+Verification deliberately goes past imports: a mismatched PJRT plugin
+imports and lists devices cleanly, so the script dispatches a small
+computation and fails loudly if the result is wrong or the expected
+accelerator is missing. It exits non-zero rather than letting a broken
+environment reach a training run.
 
 Launch the run in a **fresh process**. A notebook kernel that was already
 running before the setup script will not see the freshly installed editable
-package (PEP 660 path hooks register at interpreter startup) — a kernel
-restart is not enough unless it actually happens. The simplest reliable
-form is a second `!` cell:
+package (PEP 660 path hooks register at interpreter startup). The simplest
+reliable form is the second `!` cell above, which runs `python -m src.main`
+from the repository root as a subprocess.
 
-```bash
-!bash /kaggle/working/nli-reasoning/scripts/run_training.sh
+If you must drive it from a Python cell instead, put the repository root on
+`sys.path` **first** — `src` is a regular package now, but a foreign `src`
+directory earlier on the path still wins:
+
+```python
+import sys
+sys.path.insert(0, "/kaggle/working/nli-reasoning")
+from src.main import main
+main()
 ```
-
-This runs `python -m src.main` from the repository root as a subprocess,
-streaming logs to the cell output. (A stale kernel can also be fixed by
-restarting it and then using `from src.main import main; main()`.)
 
 Known-bad combinations (as of tunix 0.1.7 / flax 0.12.9 / perfetto 0.58):
 
@@ -96,6 +119,9 @@ Known-bad combinations (as of tunix 0.1.7 / flax 0.12.9 / perfetto 0.58):
 - `perfetto >= 0.56` + protobuf 5.x runtime (Kaggle stock):
   `google.protobuf.runtime_version.VersionError: ... gencode 6.31.1
   runtime 5.29.5` at `import tunix`.
+- `jaxlib 0.10.2` + the image's stock `jax-cuda12-plugin 0.7.2`:
+  `JaxRuntimeError: Unexpected PJRT_FFI_UserData_Add_Args size` on the
+  first `jnp` call.
 
 Quick sanity check before launching a run:
 
