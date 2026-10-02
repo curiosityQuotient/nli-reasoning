@@ -31,12 +31,51 @@ def test_embedding_vocab_axis_is_replicated():
     assert spec[0] is None, "token lookup gathers on dim 0; it must not be sharded"
 
 
-def test_hidden_axis_keeps_its_original_mesh_axis():
+def test_hidden_axis_matches_the_activation_axis():
+    """Hidden states and the RMSNorm weight must share one mesh axis."""
     default = tunix_gemma.ShardingConfig.get_default_sharding()
     patched = unshard_embedding_vocab(default)
 
-    assert patched.emb_vd[1:] == default.emb_vd[1:]
+    assert patched.emb_vd[1] == default.act_btd[-1]
     assert patched.emb_vd[0] is None
+
+
+def test_patched_config_is_usable_end_to_end():
+    """The patched config must satisfy both ops the default breaks.
+
+    The gather that failed when vocab was sharded, and the RMSNorm multiply
+    that fails when hidden sits on a different axis from the norm weight.
+    """
+    import jax.numpy as jnp
+    from jax.sharding import NamedSharding
+
+    devices = jax.local_devices()
+    if len(devices) < 2:
+        pytest.skip("needs 2+ devices to exercise a real mesh")
+
+    mesh = jax.make_mesh((1, len(devices)), ("fsdp", "tp"))
+    default = tunix_gemma.ShardingConfig.get_default_sharding()
+    spec = _embedder_sharding_spec(unshard_embedding_vocab(default), mesh)
+
+    vocab, dim = 256, 32
+    ids = jnp.zeros((2, 1, 1), jnp.int32)
+    with jax.set_mesh(mesh):
+        table = jax.device_put(
+            jnp.zeros((vocab, dim), jnp.bfloat16), NamedSharding(mesh, spec)
+        )
+        # 1. token lookup
+        hidden = jax.jit(lambda t, i: t[i])(table, ids)
+        assert hidden.shape == (2, 1, 1, dim)
+
+        # 2. RMSNorm-style multiply against a weight on the norm axis
+        norm_axis = default.rms_norm_weight[0]
+        scale = jax.device_put(
+            jnp.ones((dim,), jnp.bfloat16),
+            NamedSharding(mesh, jax.sharding.PartitionSpec(norm_axis)),
+        )
+        scale = jnp.expand_dims(scale, axis=range(len(hidden.shape) - 1))
+        out = jax.jit(lambda h, s: h * (1 + s))(hidden, scale)
+        assert out.shape == hidden.shape
 
 
 def test_sharding_config_is_not_mutated():

@@ -23,21 +23,26 @@ GEMMA2_FROM_PARAMS_VERSION = "2-2b-it"
 
 
 def unshard_embedding_vocab(shd_config: Any) -> Any:
-    """Return a sharding config that leaves the embedding vocab axis whole.
+    """Return a sharding config whose embedding gather axis is not sharded.
 
-    Tunix's default is ``emb_vd=('tp', 'fsdp')``, which shards the embedding
-    table along its vocabulary dimension. Looking a token up is a gather on
-    exactly that dimension, and a gather over a sharded axis has no single
-    valid output sharding, so the first call into the model raises::
+    Tunix's default is ``emb_vd=('tp', fsdp)``, which is wrong for us twice
+    over:
 
-        ShardingTypeError: Use `.at[...].get(out_sharding=)` to provide
-        output PartitionSpec for the gather indexing as out sharding could
-        not be resolved unambiguously
+    1. It shards the table along its *vocabulary* dimension, and looking a
+       token up is a gather on exactly that axis. A gather over a sharded
+       axis has no single valid output sharding, so the first call into the
+       model raises ``ShardingTypeError: ... out sharding could not be
+       resolved unambiguously``.
+    2. The hidden axis it names (``fsdp``) is not the axis the rest of the
+       model shards hidden states along (``act_btd`` puts hidden on ``tp``,
+       as does ``rms_norm_weight``). Leaving it there makes RMSNorm multiply
+       hidden states on one axis by a norm weight on another, and jax raises
+       ``mul got incompatible shardings for broadcasting``.
 
-    Only the leading (vocabulary) entry is replaced, so the hidden dimension
-    keeps whatever axis it was assigned.
+    So the vocabulary axis is left whole and the hidden axis is taken from the
+    activation spec, keeping one consistent convention across the model.
     """
-    return dataclasses.replace(shd_config, emb_vd=(None, *shd_config.emb_vd[1:]))
+    return dataclasses.replace(shd_config, emb_vd=(None, shd_config.act_btd[-1]))
 
 
 def download_gemma_model(
