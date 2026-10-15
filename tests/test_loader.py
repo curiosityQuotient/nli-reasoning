@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import pytest
 from flax import nnx
 
-from src.models.loader import create_mesh, unshard_embedding_vocab
+from src.models.loader import create_mesh, get_lora_model, unshard_embedding_vocab
 
 tunix_gemma = pytest.importorskip("tunix.models.gemma.model")
 
@@ -86,6 +86,108 @@ def test_sharding_config_is_not_mutated():
     unshard_embedding_vocab(default)
 
     assert default.emb_vd == before
+
+
+class _Einsum(nnx.Module):
+    """Minimal stand-in for tunix's Einsum (same sharding conventions)."""
+
+    def __init__(self, einsum_str, shape, *, rngs, sharding):
+        self.einsum_str = einsum_str
+        self.w = nnx.Param(
+            nnx.initializers.normal()(rngs.params(), shape, jnp.bfloat16),
+            sharding=sharding,
+        )
+
+    def __call__(self, x):
+        return jnp.einsum(self.einsum_str, x, self.w.value)
+
+
+class _TinyGemmaLike(nnx.Module):
+    """Tiny module following tunix's default gemma sharding conventions.
+
+    Reproduces the contracting-dim mismatch of the real model: activations
+    carry their hidden dim on ``tp`` (via the ``(None, 'tp')`` embedding
+    table) while the weight's contracting dim sits on ``fsdp``.
+    """
+
+    def __init__(self, *, rngs):
+        self.emb = nnx.Param(
+            nnx.initializers.normal()(rngs.params(), (64, 32), jnp.bfloat16),
+            sharding=jax.sharding.PartitionSpec(None, "tp"),
+        )
+        self.q_einsum = _Einsum(
+            "BTD,NDH->BTNH",
+            (8, 32, 16),
+            rngs=rngs,
+            sharding=jax.sharding.PartitionSpec("tp", "fsdp", None),
+        )
+
+    def __call__(self, tokens):
+        x = self.emb[(tokens,)]
+        return self.q_einsum(x)
+
+    def get_model_input(self):
+        return {"tokens": jnp.ones((2, 1), jnp.int32)}
+
+
+def _sharded_like_a_restored_ref_model(module, mesh):
+    """Place every parameter on the mesh, as an orbax restore would."""
+    graphdef, state = nnx.split(module)
+    named = nnx.get_named_sharding(state, mesh)
+    state = jax.tree.map(lambda x, ns: jax.device_put(x, ns), state, named)
+    return nnx.merge(graphdef, state)
+
+
+def test_lora_init_needs_a_replicated_base_model():
+    """Regression: eager LoRA init on a sharded base raised ShardingTypeError.
+
+    qwix's ``apply_lora_to_model`` runs the model forward eagerly once to
+    create the LoRA parameters. Under explicit-sharding semantics (jax>=0.8)
+    that eager einsum refuses contracting dimensions sharded on different
+    mesh axes, which is exactly what tunix's default layout produces
+    (activations 'tp' vs weights 'fsdp'). ``get_lora_model`` must therefore
+    run the init call on a fully replicated copy.
+    """
+    qwix = pytest.importorskip("qwix")
+    if len(jax.local_devices()) < 2:
+        pytest.skip("needs 2+ devices to exercise a real mesh")
+
+    from jax.sharding import AxisType, PartitionSpec
+
+    mesh = jax.make_mesh(
+        (1, len(jax.local_devices())),
+        ("fsdp", "tp"),
+        axis_types=(AxisType.Explicit, AxisType.Explicit),
+    )
+    base = _sharded_like_a_restored_ref_model(
+        _TinyGemmaLike(rngs=nnx.Rngs(params=0)), mesh
+    )
+    assert base.q_einsum.w.value.sharding.spec == PartitionSpec("tp", "fsdp", None)
+
+    provider = qwix.LoraProvider(module_path=".*", rank=4, alpha=4.0)
+    model_input = base.get_model_input()
+
+    # 1. the bug: qwix's eager init call on the sharded weights.
+    with pytest.raises(Exception, match="contracting dimensions"):
+        qwix.apply_lora_to_model(base, provider, **model_input, rngs=nnx.Rngs(0))
+
+    # 2. the fix: get_lora_model replicates first, then re-shards.
+    lora_model = get_lora_model(base, mesh, rank=4, alpha=4.0)
+
+    # the base model object is untouched and still sharded
+    assert base.q_einsum.w.value.sharding.spec == PartitionSpec("tp", "fsdp", None)
+    assert not hasattr(base.q_einsum, "w_lora_a")
+
+    # the LoRA params exist and are sharded like the base weight
+    assert hasattr(lora_model.q_einsum, "w_lora_a")
+    assert hasattr(lora_model.q_einsum, "w_lora_b")
+    tokens = jax.device_put(
+        model_input["tokens"],
+        jax.sharding.NamedSharding(mesh, PartitionSpec("fsdp", None)),
+    )
+    with mesh:
+        out = jax.jit(lambda t: lora_model(t))(tokens)
+    assert out.shape == (2, 1, 8, 16)
 
 
 def test_gather_over_embedding_is_not_sharding_ambiguous():

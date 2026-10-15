@@ -40,9 +40,7 @@ from src.main import main
 main()
 
 # Run with custom configuration
-config = {
-    "wandb_api_key": "your-api-key"
-}
+config = {"wandb_api_key": "your-api-key"}
 main(config)
 ```
 
@@ -106,8 +104,10 @@ directory earlier on the path still wins:
 
 ```python
 import sys
+
 sys.path.insert(0, "/kaggle/working/nli-reasoning")
 from src.main import main
+
 main()
 ```
 

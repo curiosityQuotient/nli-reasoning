@@ -15,7 +15,7 @@ import jax.numpy as jnp
 import kagglehub
 import orbax.checkpoint as ocp
 from flax import nnx
-from jax.sharding import Mesh
+from jax.sharding import Mesh, NamedSharding, PartitionSpec
 
 from src.models.config import ALPHA, MESH_AXES, MESH_SHAPE, RANK
 
@@ -177,6 +177,28 @@ def get_gemma_ref_model(
     return model, mesh, model_config
 
 
+def _replicate_on_mesh(model: nnx.Module, mesh: Mesh) -> nnx.Module:
+    """Return a copy of ``model`` whose parameters are fully replicated.
+
+    qwix's ``apply_lora_to_model`` runs the model forward pass eagerly (once)
+    to create the LoRA parameters. Under JAX's explicit-sharding semantics
+    (jax >= 0.8), eager einsums refuse contracting dimensions sharded on
+    different mesh axes, and Tunix's default sharding puts the activations'
+    hidden dim on ``tp`` (``act_btd``) while weight contracting dims sit on
+    ``fsdp`` (``q_weight_ndh``, ``ffw_weight_df``...), which raises
+    ``ShardingTypeError: dot_general requires contracting dimensions to have
+    consistent sharding, got ('tp',) and ('fsdp',)``. Running the init call on
+    a replicated copy avoids every eager sharding check; the LoRA model is
+    re-sharded right after (see ``get_lora_model``).
+    """
+    graphdef, state = nnx.split(model)
+    replicated = jax.tree.map(
+        lambda x: jax.device_put(x, NamedSharding(mesh, PartitionSpec())),
+        state,
+    )
+    return nnx.merge(graphdef, replicated)
+
+
 def get_lora_model(
     base_model: nnx.Module,
     mesh: Mesh,
@@ -186,7 +208,9 @@ def get_lora_model(
     """Apply LoRA to a base model, returning a fresh policy instance.
 
     The base model object is left untouched and remains usable as the
-    frozen reference model.
+    frozen reference model. The eager LoRA-initialization call runs on a
+    fully replicated copy of it (see :func:`_replicate_on_mesh`), and the
+    resulting model is then sharded back onto the mesh.
 
     Args:
         base_model: Reference model (plain NNX module)
@@ -212,21 +236,24 @@ def get_lora_model(
         alpha=alpha,
     )
 
+    lora_base = _replicate_on_mesh(base_model, mesh)
     model_input = base_model.get_model_input()
     lora_model = qwix.apply_lora_to_model(
-        base_model,
+        lora_base,
         lora_provider,
         **model_input,
         rngs=nnx.Rngs(0),
     )
+    del lora_base
 
-    with mesh:
-        state = nnx.state(lora_model)
-        pspecs = nnx.get_partition_spec(state)
-        sharded_state = jax.lax.with_sharding_constraint(state, pspecs)
-        nnx.update(lora_model, sharded_state)
-
-    return lora_model
+    graphdef, state = nnx.split(lora_model)
+    pspecs = nnx.get_partition_spec(state)
+    sharded_state = jax.tree.map(
+        lambda x, ps: jax.device_put(x, NamedSharding(mesh, ps)),
+        state,
+        pspecs,
+    )
+    return nnx.merge(graphdef, sharded_state)
 
 
 def get_tokenizer(tokenizer_path: Optional[str] = None) -> Any:
